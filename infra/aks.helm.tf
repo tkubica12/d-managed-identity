@@ -30,8 +30,19 @@ resource "helm_release" "demo" {
     value = "demo"
   }
 
+  set {
+    name  = "workload.azureClientId"
+    value = azuread_application.workload.client_id
+  }
+
+  set {
+    name  = "workload.serviceAccountName"
+    value = "workload-sa"
+  }
+
   depends_on = [
     azurerm_kubernetes_cluster.main,
-    azurerm_federated_identity_credential.service_aks
+    azurerm_federated_identity_credential.service_aks,
+    azuread_application_federated_identity_credential.workload_aks
   ]
 }

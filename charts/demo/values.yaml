@@ -6,3 +6,8 @@ serviceAccountName: demo-sa
 
 # Namespace
 namespace: demo
+
+# App Registration (Service Principal) workload identity
+workload:
+  azureClientId: ""
+  serviceAccountName: workload-sa
