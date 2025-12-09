@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: curl-demo
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: curl-demo
+  template:
+    metadata:
+      labels:
+        app: curl-demo
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      containers:
+        - name: curl
+          image: curlimages/curl:latest
+          command: ["tail", "-f", "/dev/null"]
+          env:
+            - name: AZURE_CLIENT_ID
+              value: {{ .Values.azureClientId | quote }}

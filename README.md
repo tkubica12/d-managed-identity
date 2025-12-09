@@ -86,3 +86,106 @@ print(content.decode('utf-8'))
 
 </details>
 
+## Managed Identity in AKS (Workload Identity)
+
+<details>
+<summary>1. Get AKS credentials and connect to cluster</summary>
+
+```bash
+# Get AKS credentials
+az aks get-credentials -n aks-manid-rnya -g rg-manid-rnya --overwrite-existing
+
+# Check demo pods are running
+kubectl get pods -n demo
+```
+
+</details>
+
+<details>
+<summary>2. Jump to curl container and get Kubernetes token</summary>
+
+```bash
+# Exec into curl container
+kubectl exec -it -n demo $(kubectl get pod -n demo -l app=curl-demo -o jsonpath='{.items[0].metadata.name}') -- sh
+
+# Inside the container, the service account token is automatically mounted
+# Check the projected token location
+cat /var/run/secrets/azure/tokens/azure-identity-token
+
+# Store the Kubernetes token in a variable
+K8S_TOKEN=$(cat /var/run/secrets/azure/tokens/azure-identity-token)
+echo $K8S_TOKEN
+```
+
+</details>
+
+<details>
+<summary>3. Exchange Kubernetes token for Entra token and access storage</summary>
+
+```bash
+# Inside the curl container
+# AZURE_CLIENT_ID and AZURE_TENANT_ID are already set by workload identity webhook
+echo $AZURE_CLIENT_ID
+
+# Exchange Kubernetes token for Entra token scoped to Azure Storage
+# Using sed to parse JSON since jq is not available in this minimal image
+TOKEN=$(curl -s -X POST "https://login.microsoftonline.com/$AZURE_TENANT_ID/oauth2/v2.0/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=$AZURE_CLIENT_ID" \
+  -d "scope=https://storage.azure.com/.default" \
+  -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" \
+  -d "client_assertion=$K8S_TOKEN" \
+  -d "grant_type=client_credentials" \
+  | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+
+echo $TOKEN
+
+# Access blob storage with the Entra token
+curl -s -H "Authorization: Bearer $TOKEN" \
+  -H "x-ms-version: 2020-04-08" \
+  "https://stmanidrnya.blob.core.windows.net/content/myfile.txt"
+```
+
+</details>
+
+<details>
+<summary>4. Use Python SDK with DefaultAzureCredential</summary>
+
+```bash
+# Exec into python container
+kubectl exec -it -n demo $(kubectl get pod -n demo -l app=python-demo -o jsonpath='{.items[0].metadata.name}') -- bash
+
+# Install packages
+pip install azure-identity azure-storage-blob
+
+# Run Python - no code change needed compared to VM!
+python3
+```
+
+```python
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient
+
+# DefaultAzureCredential reads AZURE_CLIENT_ID from environment
+# and uses workload identity automatically in AKS
+credential = DefaultAzureCredential()
+
+# Connect to blob storage
+blob_service_client = BlobServiceClient(
+    account_url="https://stmanidrnya.blob.core.windows.net",
+    credential=credential
+)
+
+# Download a blob
+blob_client = blob_service_client.get_blob_client(
+    container="content",
+    blob="myfile.txt"
+)
+content = blob_client.download_blob().readall()
+print(content.decode('utf-8'))
+```
+
+The same Python code works in both VM and AKS! `DefaultAzureCredential` automatically detects the environment and uses the appropriate authentication method.
+
+</details>
+

@@ -1,0 +1,8 @@
+# Azure Client ID for managed identity
+azureClientId: ""
+
+# Service account name
+serviceAccountName: demo-sa
+
+# Namespace
+namespace: demo
